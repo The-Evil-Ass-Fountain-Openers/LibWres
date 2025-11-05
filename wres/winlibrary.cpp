@@ -21,6 +21,12 @@ WinResource* WinLibrary::findResource(std::string type, std::string name, std::s
         if(it == r->children().end()) return nullptr;
         return &(*it);
     };
+
+    if(!m_isValid || !isLoaded() || !m_isPEBinary)
+    {
+        printf("Cannot find resource from an invalid file.\n");
+        return nullptr;
+    }
     WinResource *wr = &m_root;
 
     // Search by type first
@@ -42,171 +48,6 @@ WinResource* WinLibrary::findResource(std::string type, std::string name, std::s
         return wr;
     wr = find_with_resource_array(wr, language, lType);
     return wr;
-}
-/* calc_vma_size:
- *   Calculate the total amount of memory needed for a 32-bit Windows
- *   module. Returns -1 if file was too small.
- */
-int WinLibrary::calc_vma_size()
-{
-    Win32ImageSectionHeader *seg;
-    size_t c, segcount, size;
-
-    size = 0;
-    CHECK_IF_BAD_POINTER(-1, PE_HEADER(m_data)->file_header.number_of_sections);
-    segcount = PE_HEADER(m_data)->file_header.number_of_sections;
-
-    /* If there are no segments, just process file like it is.
-     * This is (probably) not the right thing to do, but problems
-     * will be dealt with later anyway.
-     */
-    if (segcount == 0)
-        return m_length;
-
-    CHECK_IF_BAD_PE_SECTIONS(-1, m_data);
-    seg = PE_SECTIONS(m_data);
-    CHECK_IF_BAD_POINTER(-1, *seg);
-
-    for (c = 0 ; c < segcount ; c++) {
-        CHECK_IF_BAD_POINTER(0, *seg);
-
-        size = std::max(size, static_cast<size_t>(seg->virtual_address + seg->size_of_raw_data));
-        /* I have no idea what misc.virtual_size is for... */
-        size = std::max(size, static_cast<size_t>(seg->virtual_address + seg->misc.virtual_size));
-        seg++;
-    }
-
-    return size;
-}
-Win32ImageDataDirectory* WinLibrary::get_data_directory_entry(unsigned int entry)
-{
-    Win32ImageNTHeaders *pe_header;
-    pe_header = PE_HEADER(m_data);
-    CHECK_IF_BAD_POINTER(NULL, pe_header->optional_header.magic);
-
-    if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32) {
-        Win32ImageOptionalHeader *optional_header = &(pe_header->optional_header);
-        CHECK_IF_BAD_POINTER(NULL, optional_header->data_directory[entry]);
-        return optional_header->data_directory + entry;
-    } else if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32_64) {
-        Win32ImageOptionalHeader64 *optional_header =
-        (Win32ImageOptionalHeader64*)&(pe_header->optional_header);
-        CHECK_IF_BAD_POINTER(NULL, optional_header->data_directory[entry]);
-        return optional_header->data_directory + entry;
-    } else {
-        return NULL;
-    }
-}
-
-/* read_library:
- *
- * Read header and get resource directory offset in a Windows library
- * (AKA module).
- */
-bool WinLibrary::read_library()
-{
-    /* check for DOS header signature `MZ' */
-    CHECK_IF_BAD_POINTER(false, MZ_HEADER(m_data)->magic);
-    if (MZ_HEADER(m_data)->magic == IMAGE_DOS_SIGNATURE) {
-        DOSImageHeader *mz_header = MZ_HEADER(m_data);
-
-        CHECK_IF_BAD_POINTER(false, mz_header->lfanew);
-        if (mz_header->lfanew < sizeof (DOSImageHeader)) {
-            warn("%s: not a PE library", m_path.c_str());
-            return false;
-        }
-
-        /* falls through */
-    }
-
-    CHECK_IF_BAD_OFFSET(false, MZ_HEADER(m_data), sizeof(Win32ImageNTHeaders));
-    /* check for OS2 (Win16) header signature `NE' */
-    CHECK_IF_BAD_POINTER(false, NE_HEADER(m_data)->magic);
-    if (NE_HEADER(m_data)->magic == IMAGE_OS2_SIGNATURE) {
-        OS2ImageHeader *header = NE_HEADER(m_data);
-        uint16_t *alignshift;
-
-        CHECK_IF_BAD_POINTER(false, header->rsrctab);
-        CHECK_IF_BAD_POINTER(false, header->restab);
-        if (header->rsrctab >= header->restab) {
-            warn("%s: no resource directory found", m_path.c_str());
-            return false;
-        }
-
-        m_isPEBinary = false;
-        alignshift = (uint16_t*)((uint8_t*)NE_HEADER(m_data) + header->rsrctab);
-        m_firstResource = ((uint8_t*)alignshift) + sizeof(uint16_t);
-        CHECK_IF_BAD_POINTER(false, *(Win16NETypeInfo*)m_firstResource);
-
-        return false;
-    }
-
-    /* check for NT header signature `PE' */
-    CHECK_IF_BAD_POINTER(false, PE_HEADER(m_data)->signature);
-    if (PE_HEADER(m_data)->signature == IMAGE_NT_SIGNATURE) {
-        Win32ImageSectionHeader *pe_sections;
-        Win32ImageDataDirectory *dir;
-        Win32ImageNTHeaders *pe_header;
-        int d;
-
-        /* allocate new memory */
-        m_length = this->calc_vma_size();
-        if (m_length <= 0) {
-            /* calc_vma_size has reported error */
-            return false;
-        }
-        m_data = (char*)realloc(m_data, m_length);
-
-        /* relocate memory, start from last section */
-        pe_header = PE_HEADER(m_data);
-        CHECK_IF_BAD_PE_SECTIONS(false, m_data);
-        pe_sections = PE_SECTIONS(m_data);
-
-        /* we don't need to do OFFSET checking for the sections.
-         * calc_vma_size has already done that */
-        for (d = pe_header->file_header.number_of_sections - 1; d >= 0 ; d--)
-        {
-            Win32ImageSectionHeader *pe_sec = pe_sections + d;
-
-            if (pe_sec->characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA)
-                continue;
-
-            //if (pe_sec->virtual_address + pe_sec->size_of_raw_data > fi->total_size)
-
-            /* Protect against memory moves overwriting the section table */
-            if ((uint8_t*)(m_data + pe_sec->virtual_address)
-                < (uint8_t*)(pe_sections + pe_header->file_header.number_of_sections))
-            {
-                warn("%s: invalid sections layout", m_path.c_str());
-                return false;
-            }
-
-            CHECK_IF_BAD_OFFSET(0, m_data + pe_sec->virtual_address, pe_sec->size_of_raw_data);
-            CHECK_IF_BAD_OFFSET(0, m_data + pe_sec->pointer_to_raw_data, pe_sec->size_of_raw_data);
-            if (pe_sec->virtual_address != pe_sec->pointer_to_raw_data)
-            {
-                memmove(m_data + pe_sec->virtual_address,
-                        m_data + pe_sec->pointer_to_raw_data,
-                        pe_sec->size_of_raw_data);
-            }
-        }
-
-        /* find resource directory */
-        dir = this->get_data_directory_entry(IMAGE_DIRECTORY_ENTRY_RESOURCE);
-        if (dir == NULL) return false;
-        if (dir->size == 0) {
-            warn("%s: file contains no resources", m_path.c_str());
-            return false;
-        }
-
-        m_firstResource = ((uint8_t*)m_data) + dir->virtual_address;
-        m_isPEBinary = true;
-        return true;
-    }
-
-    /* other (unknown) header signature was found */
-    warn("%s: not a PE or NE library", m_path.c_str());
-    return false;
 }
 
 WinLibrary::WinLibrary(std::string p)
@@ -386,22 +227,13 @@ std::vector<WinResource> WinLibrary::list_pe_resources(WinResource &res)
 
     return result;
 }
-std::vector<WinResource> WinLibrary::list_resources(WinResource &res)
-{
-    if (!res.isDirectory())
-        return {};
-
-    if (m_isPEBinary)
-    {
-        return list_pe_resources(res);
-    }
-    else
-    {
-        return {};
-    }
-}
 bool WinLibrary::buildResourceTree(WinResource *res)
 {
+    if(!m_isValid || !isLoaded() || !m_isPEBinary)
+    {
+        printf("Cannot build resource tree from an invalid file.\n");
+        return false;
+    }
     res->setChildren(list_resources(*res));
     if(res->children().size() == 0) return false;
 
@@ -469,6 +301,11 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
         return outpath + ((outpath.empty() || outpath == "") ? std::string("") : std::string("/")) + str;
     };
 
+    if(!m_isValid || !isLoaded() || !m_isPEBinary)
+    {
+        printf("Cannot extract from an invalid file.\n");
+        return false;
+    }
     if(res == nullptr)
     {
         printf("Cannot extract from a null resource.\n");
@@ -531,6 +368,21 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
     return true;
 
 }
+std::vector<WinResource> WinLibrary::list_resources(WinResource &res)
+{
+    if (!res.isDirectory())
+        return {};
+
+    if (m_isPEBinary)
+    {
+        return list_pe_resources(res);
+    }
+    else
+    {
+        return {};
+    }
+}
+
 void* WinLibrary::extract(WinResource *res, size_t *size, bool *free_it, bool raw)
 {
 	int32_t intval;
@@ -806,6 +658,171 @@ void* WinLibrary::extract_bitmap_resource(WinResource *res, size_t *ressize)
     return result;
 }
 
+/* calc_vma_size:
+ *   Calculate the total amount of memory needed for a 32-bit Windows
+ *   module. Returns -1 if file was too small.
+ */
+int WinLibrary::calc_vma_size()
+{
+    Win32ImageSectionHeader *seg;
+    size_t c, segcount, size;
+
+    size = 0;
+    CHECK_IF_BAD_POINTER(-1, PE_HEADER(m_data)->file_header.number_of_sections);
+    segcount = PE_HEADER(m_data)->file_header.number_of_sections;
+
+    /* If there are no segments, just process file like it is.
+     * This is (probably) not the right thing to do, but problems
+     * will be dealt with later anyway.
+     */
+    if (segcount == 0)
+        return m_length;
+
+    CHECK_IF_BAD_PE_SECTIONS(-1, m_data);
+    seg = PE_SECTIONS(m_data);
+    CHECK_IF_BAD_POINTER(-1, *seg);
+
+    for (c = 0 ; c < segcount ; c++) {
+        CHECK_IF_BAD_POINTER(0, *seg);
+
+        size = std::max(size, static_cast<size_t>(seg->virtual_address + seg->size_of_raw_data));
+        /* I have no idea what misc.virtual_size is for... */
+        size = std::max(size, static_cast<size_t>(seg->virtual_address + seg->misc.virtual_size));
+        seg++;
+    }
+
+    return size;
+}
+Win32ImageDataDirectory* WinLibrary::get_data_directory_entry(unsigned int entry)
+{
+    Win32ImageNTHeaders *pe_header;
+    pe_header = PE_HEADER(m_data);
+    CHECK_IF_BAD_POINTER(NULL, pe_header->optional_header.magic);
+
+    if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32) {
+        Win32ImageOptionalHeader *optional_header = &(pe_header->optional_header);
+        CHECK_IF_BAD_POINTER(NULL, optional_header->data_directory[entry]);
+        return optional_header->data_directory + entry;
+    } else if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32_64) {
+        Win32ImageOptionalHeader64 *optional_header =
+        (Win32ImageOptionalHeader64*)&(pe_header->optional_header);
+        CHECK_IF_BAD_POINTER(NULL, optional_header->data_directory[entry]);
+        return optional_header->data_directory + entry;
+    } else {
+        return NULL;
+    }
+}
+
+/* read_library:
+ *
+ * Read header and get resource directory offset in a Windows library
+ * (AKA module).
+ */
+bool WinLibrary::read_library()
+{
+    /* check for DOS header signature `MZ' */
+    CHECK_IF_BAD_POINTER(false, MZ_HEADER(m_data)->magic);
+    if (MZ_HEADER(m_data)->magic == IMAGE_DOS_SIGNATURE) {
+        DOSImageHeader *mz_header = MZ_HEADER(m_data);
+
+        CHECK_IF_BAD_POINTER(false, mz_header->lfanew);
+        if (mz_header->lfanew < sizeof (DOSImageHeader)) {
+            warn("%s: not a PE library", m_path.c_str());
+            return false;
+        }
+
+        /* falls through */
+    }
+
+    CHECK_IF_BAD_OFFSET(false, MZ_HEADER(m_data), sizeof(Win32ImageNTHeaders));
+    /* check for OS2 (Win16) header signature `NE' */
+    CHECK_IF_BAD_POINTER(false, NE_HEADER(m_data)->magic);
+    if (NE_HEADER(m_data)->magic == IMAGE_OS2_SIGNATURE) {
+        OS2ImageHeader *header = NE_HEADER(m_data);
+        uint16_t *alignshift;
+
+        CHECK_IF_BAD_POINTER(false, header->rsrctab);
+        CHECK_IF_BAD_POINTER(false, header->restab);
+        if (header->rsrctab >= header->restab) {
+            warn("%s: no resource directory found", m_path.c_str());
+            return false;
+        }
+
+        m_isPEBinary = false;
+        alignshift = (uint16_t*)((uint8_t*)NE_HEADER(m_data) + header->rsrctab);
+        m_firstResource = ((uint8_t*)alignshift) + sizeof(uint16_t);
+        CHECK_IF_BAD_POINTER(false, *(Win16NETypeInfo*)m_firstResource);
+
+        return false;
+    }
+
+    /* check for NT header signature `PE' */
+    CHECK_IF_BAD_POINTER(false, PE_HEADER(m_data)->signature);
+    if (PE_HEADER(m_data)->signature == IMAGE_NT_SIGNATURE) {
+        Win32ImageSectionHeader *pe_sections;
+        Win32ImageDataDirectory *dir;
+        Win32ImageNTHeaders *pe_header;
+        int d;
+
+        /* allocate new memory */
+        m_length = this->calc_vma_size();
+        if (m_length <= 0) {
+            /* calc_vma_size has reported error */
+            return false;
+        }
+        m_data = (char*)realloc(m_data, m_length);
+
+        /* relocate memory, start from last section */
+        pe_header = PE_HEADER(m_data);
+        CHECK_IF_BAD_PE_SECTIONS(false, m_data);
+        pe_sections = PE_SECTIONS(m_data);
+
+        /* we don't need to do OFFSET checking for the sections.
+         * calc_vma_size has already done that */
+        for (d = pe_header->file_header.number_of_sections - 1; d >= 0 ; d--)
+        {
+            Win32ImageSectionHeader *pe_sec = pe_sections + d;
+
+            if (pe_sec->characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA)
+                continue;
+
+            //if (pe_sec->virtual_address + pe_sec->size_of_raw_data > fi->total_size)
+
+            /* Protect against memory moves overwriting the section table */
+            if ((uint8_t*)(m_data + pe_sec->virtual_address)
+                < (uint8_t*)(pe_sections + pe_header->file_header.number_of_sections))
+            {
+                warn("%s: invalid sections layout", m_path.c_str());
+                return false;
+            }
+
+            CHECK_IF_BAD_OFFSET(0, m_data + pe_sec->virtual_address, pe_sec->size_of_raw_data);
+            CHECK_IF_BAD_OFFSET(0, m_data + pe_sec->pointer_to_raw_data, pe_sec->size_of_raw_data);
+            if (pe_sec->virtual_address != pe_sec->pointer_to_raw_data)
+            {
+                memmove(m_data + pe_sec->virtual_address,
+                        m_data + pe_sec->pointer_to_raw_data,
+                        pe_sec->size_of_raw_data);
+            }
+        }
+
+        /* find resource directory */
+        dir = this->get_data_directory_entry(IMAGE_DIRECTORY_ENTRY_RESOURCE);
+        if (dir == NULL) return false;
+        if (dir->size == 0) {
+            warn("%s: file contains no resources", m_path.c_str());
+            return false;
+        }
+
+        m_firstResource = ((uint8_t*)m_data) + dir->virtual_address;
+        m_isPEBinary = true;
+        return true;
+    }
+
+    /* other (unknown) header signature was found */
+    warn("%s: not a PE or NE library", m_path.c_str());
+    return false;
+}
 
 WinLibrary::~WinLibrary()
 {
