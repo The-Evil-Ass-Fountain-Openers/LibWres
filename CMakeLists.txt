@@ -14,6 +14,4 @@ include_directories(${COMMON_INCLUDE})
 
 #add_subdirectory(common)
 add_subdirectory(wres)
-
-
 #add_subdirectory(test)

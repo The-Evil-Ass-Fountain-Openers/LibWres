@@ -466,7 +466,7 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
 
         str += extension;
 
-        return str;
+        return outpath + ((outpath.empty() || outpath == "") ? std::string("") : std::string("/")) + str;
     };
 
     if(res == nullptr)
@@ -474,49 +474,62 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
         printf("Cannot extract from a null resource.\n");
         return false;
     }
-    size_t size;
-    bool free_it;
-    void *memory;
-    std::string outname;
-    FILE *out;
-
-    memory = extract(res, &size, &free_it, raw);
-    if (memory == NULL)
+    if(res->isDirectory())
     {
-        /* extract resource has printed error */
-        return false;
-    }
-
-    /* determine where to extract to */
-    outname = get_destination_name();
-    if (outname.empty() || outname == "")
-    {
-        out = stdout;
+        for(auto r : res->children())
+        {
+            extractResource(&r, outpath, raw);
+        }
     }
     else
     {
-        out = fopen(outname.c_str(), "wb");
-        if (out == NULL)
-        {
-            warn_errno("%s", outname.c_str());
 
-            if (free_it)
-                 free(memory);
-            if (out != NULL && out != stdout)
-                 fclose(out);
+        size_t size;
+        bool free_it;
+        void *memory;
+        std::string outname;
+        FILE *out;
+
+        memory = extract(res, &size, &free_it, raw);
+        if (memory == NULL)
+        {
+            /* extract resource has printed error */
             return false;
         }
+
+        /* determine where to extract to */
+        outname = get_destination_name();
+        printf("%s\n\n", outname.c_str());
+        if (outname.empty() || outname == "")
+        {
+            out = stdout;
+        }
+        else
+        {
+            out = fopen(outname.c_str(), "wb");
+            if (out == NULL)
+            {
+                warn_errno("%s", outname.c_str());
+
+                if (free_it)
+                     free(memory);
+                if (out != NULL && out != stdout)
+                     fclose(out);
+                return false;
+            }
+        }
+
+        /* write the actual data */
+        fwrite(memory, size, 1, out);
+
+        if (free_it)
+            free(memory);
+        if (out != NULL && out != stdout)
+            fclose(out);
+
     }
-
-    /* write the actual data */
-    fwrite(memory, size, 1, out);
-
-    if (free_it)
-        free(memory);
-    if (out != NULL && out != stdout)
-        fclose(out);
-
     return true;
+
 }
 void* WinLibrary::extract(WinResource *res, size_t *size, bool *free_it, bool raw)
 {
