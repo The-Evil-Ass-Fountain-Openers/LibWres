@@ -1,5 +1,7 @@
 #include "winresource.h"
 #include "macros.h"
+#include "wresutil.h"
+#include "intutil.h"
 #include <stdexcept>
 
 namespace wres
@@ -108,6 +110,44 @@ std::string WinResource::typeAsString() const
         return m_type;
     }
 }
+/*
+ * get_extract_extension:
+ * Return extension for files of a certain resource type
+ */
+std::string WinResource::getExtractExtension() const
+{
+    if(m_type.empty() || m_type == "") return "";
+    uint16_t value;
+    auto type_c = res_type_string_to_id(m_type.c_str());
+    if (parse_uint16(type_c, &value))
+    {
+        if (value == 2)
+            return ".bmp";
+        if (value == 14)
+            return ".ico";
+        if (value == 12)
+            return ".cur";
+    }
+
+    // Try recognizing PNG
+    if(m_size > 8 && m_offset != nullptr)
+    {
+        if(memcmp((uint8_t*)m_offset, png_signature, 8) == 0)
+        {
+            return ".png";
+        }
+    }
+    if(m_size > 3 && m_offset != nullptr)
+    {
+        if(memcmp((uint8_t*)m_offset, jpg_signature, 3) == 0)
+        {
+            return ".jpg";
+        }
+    }
+
+    return "";
+}
+
 
 int WinResource::level() const
 {

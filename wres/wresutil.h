@@ -58,7 +58,9 @@ static const char *res_type_ids[] =
 /* main.c */
 const char *res_type_id_to_string(int);
 const char *res_type_string_to_id (const char*);
-const char *get_extract_extension (const char*);
+
+static const uint8_t png_signature[] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+static const uint8_t jpg_signature[] = { 0xFF, 0xD8, 0xFF };
 
 }
 

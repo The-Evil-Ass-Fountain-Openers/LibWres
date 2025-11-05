@@ -284,12 +284,11 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
     auto get_destination_name = [&]() -> std::string
     {
         std::string str(basename(this->m_path.c_str()));
-        std::string extension = "";
+        std::string extension = res->getExtractExtension();
 
         if(res->type() != "" && !res->type().empty())
         {
             str += std::string("_") + res->type();
-            extension = std::string(get_extract_extension(res->type().c_str()));
         }
         if(res->name() != "" && !res->name().empty())
             str += std::string("_") + res->name();
@@ -315,12 +314,14 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
     {
         for(auto r : res->children())
         {
-            extractResource(&r, outpath, raw);
+            if(!extractResource(&r, outpath, raw))
+            {
+                return false;
+            }
         }
     }
     else
     {
-
         size_t size;
         bool free_it;
         void *memory;
@@ -396,24 +397,30 @@ void* WinLibrary::extract(WinResource *res, size_t *size, bool *free_it, bool ra
         return res->offset();
     }
 	/* find out how to extract */
-	if((res->type() != "" && !res->type().empty()) && parse_int32(res->type().c_str(), &intval))
+	if((res->type() != "" && !res->type().empty()))
 	{
-        switch(intval)
+        if(parse_int32(res->type().c_str(), &intval))
         {
-            case RT_BITMAP:
-                *free_it = true;
-                return extract_bitmap_resource(res, size);
-            case RT_GROUP_ICON:
-                *free_it = true;
-                return extract_group_icon_cursor_resource(res, size, true);
-            case RT_GROUP_CURSOR:
-                *free_it = true;
-                return extract_group_icon_cursor_resource(res, size, false);
-            default:
-                *free_it = false;
-                *size = res->size();
-                return res->offset();
+            switch(intval)
+            {
+                case RT_BITMAP:
+                    *free_it = true;
+                    return extract_bitmap_resource(res, size);
+                case RT_GROUP_ICON:
+                    *free_it = true;
+                    return extract_group_icon_cursor_resource(res, size, true);
+                case RT_GROUP_CURSOR:
+                    *free_it = true;
+                    return extract_group_icon_cursor_resource(res, size, false);
+                default:
+                    *free_it = false;
+                    *size = res->size();
+                    return res->offset();
+            }
         }
+        *free_it = false;
+        *size = res->size();
+        return res->offset();
 	}
 	return nullptr;
 }

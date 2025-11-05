@@ -82,27 +82,5 @@ const char *res_type_string_to_id (const char *type)
     return type;
 }
 
-/*
- * get_extract_extension:
- * Return extension for files of a certain resource type
- */
-const char *get_extract_extension (const char *type)
-{
-	uint16_t value;
-
-	type = res_type_string_to_id(type);
-	if (parse_uint16(type, &value))
-	{
-		if (value == 2)
-			return ".bmp";
-		if (value == 14)
-			return ".ico";
-		if (value == 12)
-			return ".cur";
-	}
-
-	return "";
-}
-
 }
 

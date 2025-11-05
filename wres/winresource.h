@@ -89,6 +89,8 @@ public:
     void setSize(size_t s);
     void setChildren(std::vector<WinResource> res);
 
+    std::string getExtractExtension() const;
+
 private:
     std::string m_id = "";
     id_type m_idType;
