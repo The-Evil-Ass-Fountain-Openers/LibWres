@@ -1,0 +1,380 @@
+/* strbuf.c - The string buffer data-structure.
+ *
+ * Copyright (C) 2004 Oskar Liljeblad
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <stdint.h>		/* Gnulib/C99 */
+#include <stdarg.h>		/* Gnulib/C89 */
+#include <stdlib.h>		/* Gnulib/C89 */
+#include <string.h>		/* Gnulib/C89 */
+#include <stdio.h>		/* Gnulib/C89 */
+#include "strbuf.h"		/* common */
+
+#define DEFAULT_STRBUF_CAPACITY 16
+
+#define SWAP_SSIZE_T(a,b) { ssize_t _t = (a); (a) = (b); (b) = _t; }
+
+#define MAX(a,b)             \
+({                           \
+    __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a > _b ? _a : _b;       \
+})
+
+static ssize_t
+normalize_strbuf_pos(StrBuf *sb, ssize_t pos)
+{
+    if (pos >= (ssize_t) sb->len)
+        return sb->len;
+    if (pos >= 0)
+        return pos;
+    pos += 1 + sb->len;
+    if (pos >= 0)
+        return pos;
+    return 0;
+}
+
+static ssize_t
+normalize_str_pos(const char *str, ssize_t pos)
+{
+    if (str == NULL)
+        return 0;
+    if (pos >= 0)
+        return strnlen(str, pos);
+    pos += 1 + strlen(str);
+    if (pos >= 0)
+        return pos;
+    return 0;
+}
+
+char *
+strbuf_buffer(StrBuf *sb)
+{
+    return sb->buf;
+}
+
+size_t
+strbuf_length(StrBuf *sb)
+{
+    return sb->len;
+}
+
+size_t
+strbuf_capacity(StrBuf *sb)
+{
+    return sb->capacity;
+}
+
+StrBuf *
+strbuf_new(void)
+{
+    return strbuf_new_with_capacity(DEFAULT_STRBUF_CAPACITY);
+}
+
+StrBuf *
+strbuf_new_with_capacity(size_t capacity)
+{
+    StrBuf *sb;
+    sb = (StrBuf*)malloc(sizeof(StrBuf));
+    sb->len = 0;
+    sb->capacity = capacity;
+    sb->buf = (char*)malloc(sb->capacity * sizeof(char));
+    if (sb->capacity > 0)
+    	sb->buf[0] = '\0';
+    return sb;
+}
+
+StrBuf *
+strbuf_new_from_char_n(size_t times, char ch)
+{
+    return strbuf_new_from_substring_n(times, &ch, 0, 1);
+}
+
+StrBuf *
+strbuf_new_from_substring_n(size_t times, const char *substr, ssize_t subsp, ssize_t subep)
+{
+    subsp = normalize_str_pos(substr, subsp);
+    subep = normalize_str_pos(substr, subep);
+    if (subsp > subep)
+    	SWAP_SSIZE_T(subsp, subep);
+
+    return strbuf_new_from_data_n(times, substr+subsp, subep-subsp);
+}
+
+StrBuf *
+strbuf_new_from_data_n(size_t times, const void *mem, size_t len)
+{
+    StrBuf *sb;
+
+    sb = strbuf_new_with_capacity(len * times + 1);
+    sb->len = len * times;
+    for (; times > 0; times--)
+	memcpy(sb->buf + len*(times-1), mem, len);
+    sb->buf[sb->len] = '\0';
+
+    return sb;
+}
+
+StrBuf *
+strbuf_newf_n(size_t times, const char *fmt, ...)
+{
+    va_list ap;
+    StrBuf *buf;
+
+    va_start(ap, fmt);
+    buf = strbuf_vnewf_n(times, fmt, ap);
+    va_end(ap);
+
+    return buf;
+}
+
+StrBuf *
+strbuf_vnewf_n(size_t times, const char *fmt, va_list ap)
+{
+    char *str;
+    int len;
+    StrBuf *buf;
+
+    len = vasprintf(&str, fmt, ap);
+    if (len < 0)
+    {
+        printf("Out of memory error!\n");
+        exit(1);
+    }
+
+    buf = strbuf_new_from_substring_n(times, str, 0, len);
+    free(str);
+    return buf;
+}
+
+void
+strbuf_free(StrBuf *sb)
+{
+    if (sb != NULL) {
+    	free(sb->buf);
+	free(sb);
+    }
+}
+
+char *
+strbuf_free_to_substring(StrBuf *sb, ssize_t sp, ssize_t ep)
+{
+    char *buf;
+
+    sp = normalize_strbuf_pos(sb, sp);
+    ep = normalize_strbuf_pos(sb, ep);
+    if (sp != 0)
+	memmove(sb->buf, sb->buf+sp, ep-sp);
+    sb->buf[ep-sp] = '\0';
+
+    /* Call realloc so that unused memory can be used for other purpose. */
+    if (sp == 0 && ep == (ssize_t) sb->len)
+        buf = sb->buf;
+    else
+        buf = (char*)realloc(sb->buf, ep-sp+1);
+    free(sb);
+    return buf;
+}
+
+void
+strbuf_replace_char_n(StrBuf *sb, ssize_t sp, ssize_t ep, size_t times, char ch)
+{
+    strbuf_replace_substring_n(sb, sp, ep, times, &ch, 0, 1);
+}
+
+void
+strbuf_replace_data_n(StrBuf *sb, ssize_t sp, ssize_t ep, size_t times, const void *mem, size_t len)
+{
+    size_t addlen;
+    size_t dellen;
+
+    sp = normalize_strbuf_pos(sb, sp);
+    ep = normalize_strbuf_pos(sb, ep);
+    if (sp > ep)
+    	SWAP_SSIZE_T(sp, ep);
+
+    addlen = len * times;
+    dellen = ep-sp;
+    if (addlen != dellen) {
+    	strbuf_ensure_capacity(sb, sb->len+1-dellen+addlen);
+	memmove(sb->buf+sp+addlen, sb->buf+ep, sb->len+1-ep);
+	sb->len += addlen-dellen;
+    }
+    if (addlen > 0) {
+    	for (; times > 0; times--) {
+    	    memcpy(sb->buf+sp, mem, len);
+	    sp += len;
+	}
+    }
+}
+
+void
+strbuf_replace_substring_n(StrBuf *sb, ssize_t sp, ssize_t ep, size_t times, const char *substr, ssize_t subsp, ssize_t subep)
+{
+    subsp = normalize_str_pos(substr, subsp);
+    subep = normalize_str_pos(substr, subep);
+    if (subsp > subep)
+    	SWAP_SSIZE_T(subsp, subep);
+
+    strbuf_replace_data_n(sb, sp, ep, times, substr+subsp, subep-subsp);
+}
+
+int
+strbuf_replacef_n(StrBuf *sb, ssize_t sp, ssize_t ep, size_t times, const char *fmt, ...)
+{
+    va_list ap;
+    int len;
+
+    va_start(ap, fmt);
+    len = strbuf_vreplacef_n(sb, sp, ep, times, fmt, ap);
+    va_end(ap);
+
+    return len;
+}
+
+int
+strbuf_vreplacef_n(StrBuf *sb, ssize_t sp, ssize_t ep, size_t times, const char *fmt, va_list ap)
+{
+    char *str;
+    int len;
+
+    sp = normalize_strbuf_pos(sb, sp);
+    ep = normalize_strbuf_pos(sb, ep);
+    if (sp > ep)
+    	SWAP_SSIZE_T(sp, ep);
+
+    len = vasprintf(&str, fmt, ap);
+    if (len < 0)
+    {
+        printf("Out of memory error!\n");
+        exit(1);
+    }
+
+    strbuf_replace_substring_n(sb, sp, ep, times, str, 0, len);
+    free(str);
+    return len;
+}
+
+void
+strbuf_reverse_substring(StrBuf *sb, ssize_t sp, ssize_t ep)
+{
+    sp = normalize_strbuf_pos(sb, sp);
+    ep = normalize_strbuf_pos(sb, ep);
+
+    while (sp < ep) {
+    	SWAP_SSIZE_T(sb->buf[sp], sb->buf[ep]);
+    	sp++;
+	ep--;
+    }
+}
+
+void
+strbuf_repeat_substring(StrBuf *sb, ssize_t sp, ssize_t ep, size_t times)
+{
+    ssize_t addlen;
+
+    sp = normalize_strbuf_pos(sb, sp);
+    ep = normalize_strbuf_pos(sb, ep);
+
+    addlen = (ep-sp) * (times - 1);
+    if (addlen != 0) {
+    	size_t p;
+
+    	strbuf_ensure_capacity(sb, sb->len+1+addlen);
+	memmove(sb->buf+sp+addlen, sb->buf+ep, sb->len+1-ep);
+	sb->len += addlen;
+
+	p = ep;
+    	for (; times > 0; times--) {
+    	    memmove(sb->buf+p, sb->buf+sp, ep-sp);
+	    p += ep-sp;
+	}
+    }
+}
+
+void
+strbuf_set_length(StrBuf *sb, size_t new_length)
+{
+    strbuf_ensure_capacity(sb, new_length+1);
+    sb->buf[new_length] = '\0';
+    sb->len = new_length;
+}
+
+/* Note: The terminating null-byte counts as 1 in min_capacity */
+void
+strbuf_ensure_capacity(StrBuf *sb, size_t min_capacity)
+{
+    if (min_capacity > sb->capacity) {
+	sb->capacity = MAX(min_capacity, sb->len*2+2); /* MAX -> max */
+    	sb->buf = (char*)realloc(sb->buf, sb->capacity * sizeof(char));
+	if (sb->len == 0)
+    	    sb->buf[0] = '\0';
+    }
+}
+
+char *
+strbuf_substring(StrBuf *sb, ssize_t sp, ssize_t ep)
+{
+    char *str;
+
+    sp = normalize_strbuf_pos(sb, sp);
+    ep = normalize_strbuf_pos(sb, ep);
+    if (sp > ep)
+    	SWAP_SSIZE_T(sp, ep);
+
+    str = (char*)malloc((ep-sp+1) * sizeof(char));
+    memcpy(str, sb->buf+sp, (ep-sp+1) * sizeof(char));
+    str[ep-sp] = '\0';
+
+    return str;
+}
+
+char
+strbuf_char_at(StrBuf *sb, ssize_t sp)
+{
+    return sb->buf[normalize_strbuf_pos(sb, sp)];
+}
+
+#if 0
+char
+strbuf_set_char_at(StrBuf *sb, ssize_t sp, char chr)
+{
+    char old;
+
+    sp = normalize_strbuf_pos(sb, sp);
+    old = str[sp];
+    str[sp] = chr;
+    if (sp == sb->len) {
+        sb->len++;
+        strbuf_ensure_capacity(sb, sb->len+1);
+        str[sb->len] = '\0'
+    }
+    return old;
+}
+
+void
+strbuf_replace_strbuf(StrBuf *sb, ssize_t sp, ssize_t ep, StrBuf *strbuf)
+{
+    strbuf_replace_data_n(sb,sp,ep,1,strbuf->buf,strbuf->len);
+}
+
+char
+strbuf_delete_char(StrBuf *sb, ssize_t sp)
+{
+
+}
+
+#endif
