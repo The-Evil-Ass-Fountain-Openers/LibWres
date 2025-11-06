@@ -37,6 +37,7 @@ namespace wres
 
 bool check_offset(const char *, size_t, const char *, const void *, size_t);
 
+// Resource types represented as human readable strings
 static const char *res_types[] =
 {
 	/* 0x01: */
@@ -48,6 +49,7 @@ static const char *res_types[] =
 	"version", "dlginclude", NULL, "plugplay", "vxd",
 	"anicursor", "aniicon"
 };
+// Resource types represented as numeric IDs
 static const char *res_type_ids[] =
 {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
@@ -55,10 +57,11 @@ static const char *res_type_ids[] =
 	"20", "21", "22"
 };
 
-/* main.c */
+// Conversion functions between string and numeric types
 const char *res_type_id_to_string(int);
 const char *res_type_string_to_id (const char*);
 
+// PNG and JPG header signatures, used to attach the respective extensions to extracted files
 static const uint8_t png_signature[] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 static const uint8_t jpg_signature[] = { 0xFF, 0xD8, 0xFF };
 

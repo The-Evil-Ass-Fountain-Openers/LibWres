@@ -24,7 +24,7 @@ WinResource* WinLibrary::findResource(std::string type, std::string name, std::s
 
     if(!m_isValid || !isLoaded() || !m_isPEBinary)
     {
-        printf("Cannot find resource from an invalid file.\n");
+        warn("[wres] Cannot find resource from an invalid file.\n");
         return nullptr;
     }
     WinResource *wr = &m_root;
@@ -56,12 +56,12 @@ WinLibrary::WinLibrary(std::string p)
     m_length = file_size(p.c_str());
     if(m_length == -1)
     {
-        printf("[wres] Failed to get file size of %s!\n", p.c_str());
+        warn("[wres] Failed to get file size of %s!\n", p.c_str());
         return;
     }
     if(m_length == 0)
     {
-        printf("[wres] File %s has a size of 0 bytes!\n", p.c_str());
+        warn("[wres] File %s has a size of 0 bytes!\n", p.c_str());
         m_isValid = false;
         return;
     }
@@ -69,7 +69,7 @@ WinLibrary::WinLibrary(std::string p)
     m_fi = fopen(p.c_str(), "rb");
     if(!m_fi)
     {
-        printf("[wres] Failed to open file %s!\n", p.c_str());
+        warn("[wres] Failed to open file %s!\n", p.c_str());
         m_isValid = false;
         return;
     }
@@ -78,14 +78,14 @@ WinLibrary::WinLibrary(std::string p)
     m_data = (char*)malloc(m_length);
     if (fread(m_data, m_length, 1, m_fi) != 1)
     {
-        printf("[wres] Error while reading file %s!\n", p.c_str());
+        warn("[wres] Error while reading file %s!\n", p.c_str());
         m_isValid = false;
         return;
     }
 
     if(!this->read_library())
     {
-        printf("[wres] Something went wrong while parsing the library header\n");
+        warn("[wres] Something went wrong while parsing the library header\n");
         m_isValid = false;
         return;
     }
@@ -100,8 +100,13 @@ WinLibrary::WinLibrary(std::string p)
     m_isValid = true;
 
     buildResourceTree(&m_root);
+
+}
+
+void WinLibrary::printResourceTree()
+{
     // Print the whole structure
-    printf("Tree:\n");
+    printf("[wres] Printing %s tree:\n", basename(m_path.c_str()));
     for(int i = 0; i < m_root.children().size(); i++)
     {
         auto c = m_root.children()[i];
@@ -120,7 +125,6 @@ WinLibrary::WinLibrary(std::string p)
                        (uint32_t)(c2.offset() - m_data), c2.size());
             }
         }
-
     }
 
 }
@@ -163,8 +167,7 @@ bool WinLibrary::decode_pe_resource_id(WinResource *wr, uint32_t value)
     {
         /* numeric id */
         int c, len;
-        uint16_t *mem = (uint16_t *)
-          (m_firstResource + (value & ~IMAGE_RESOURCE_NAME_IS_STRING));
+        uint16_t *mem = (uint16_t *)(m_firstResource + (value & ~IMAGE_RESOURCE_NAME_IS_STRING));
 
         /* copy each char of the string, and terminate it */
         CHECK_IF_BAD_POINTER(false, *mem);
@@ -205,7 +208,8 @@ std::vector<WinResource> WinLibrary::list_pe_resources(WinResource &res)
     if (rescnt == 0) return {};
 
     /* fill in the WinResource's */
-    for (dirent_c = 0; dirent_c < rescnt; dirent_c++) {
+    for (dirent_c = 0; dirent_c < rescnt; dirent_c++)
+    {
         CHECK_IF_BAD_POINTER(std::vector<WinResource>(), dirent[dirent_c]);
         // Tracks the parent apparently instead of it being self-referential
         WinResource r;
@@ -231,7 +235,7 @@ bool WinLibrary::buildResourceTree(WinResource *res)
 {
     if(!m_isValid || !isLoaded() || !m_isPEBinary)
     {
-        printf("Cannot build resource tree from an invalid file.\n");
+        warn("[wres] Cannot build resource tree from an invalid file.\n");
         return false;
     }
     res->setChildren(list_resources(*res));
@@ -241,7 +245,7 @@ bool WinLibrary::buildResourceTree(WinResource *res)
     {
         if (res->children()[i].level() <= res->level() || (res->level() >= 3))
         {
-            printf("%s: resource structure malformed\n", m_path.c_str());
+            warn("[wres] %s: resource structure malformed\n", m_path.c_str());
             return false;
         }
         switch(res->children()[i].level())
@@ -252,7 +256,7 @@ bool WinLibrary::buildResourceTree(WinResource *res)
             case 1: // Inherit type from parent
                 if(res->children()[i].parent() == nullptr)
                 {
-                    printf("Resource with nonzero level has a null parent!\n");
+                    warn("[wres] Resource with nonzero level has a null parent!\n");
                     return false;
                 }
                 res->children()[i].setType(res->children()[i].parent()->type());
@@ -261,7 +265,7 @@ bool WinLibrary::buildResourceTree(WinResource *res)
             case 2: // Inherit type and name from parent
                 if(res->children()[i].parent() == nullptr)
                 {
-                    printf("Resource with nonzero level has a null parent!\n");
+                    printf("[wres] Resource with nonzero level has a null parent!\n");
                     return false;
                 }
                 res->children()[i].setType(res->children()[i].parent()->type());
@@ -302,12 +306,12 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
 
     if(!m_isValid || !isLoaded() || !m_isPEBinary)
     {
-        printf("Cannot extract from an invalid file.\n");
+        warn("[wres] Cannot extract from an invalid file.\n");
         return false;
     }
     if(res == nullptr)
     {
-        printf("Cannot extract from a null resource.\n");
+        warn("[wres] Cannot extract from a null resource.\n");
         return false;
     }
     if(res->isDirectory())
@@ -331,7 +335,7 @@ bool WinLibrary::extractResource(WinResource* res, std::string outpath, bool raw
         memory = extract(res, &size, &free_it, raw);
         if (memory == NULL)
         {
-            /* extract resource has printed error */
+            warn("[wres] Resource returned a null reference during extraction.\n");
             return false;
         }
 
@@ -456,26 +460,19 @@ void* WinLibrary::extract_group_icon_cursor_resource(WinResource *res, size_t *r
     /* calculate total size of output file */
     CHECK_IF_BAD_POINTER(nullptr, icondir->count);
     skipped = 0;
-    for (int c = 0 ; c < icondir->count ; c++)
+    for (int c = 0; c < icondir->count; c++)
     {
         size_t iconsize;
         char name[14];
 
         CHECK_IF_BAD_POINTER(nullptr, icondir->entries[c]);
-        /*printf("%d. bytes_in_res=%d width=%d height=%d planes=%d bit_count=%d\n", c,
-         *			icondir->entries[c].bytes_in_res,
-         *			(is_icon ? icondir->entries[c].res_info.icon.width : icondir->entries[c].res_info.cursor.width),
-         *			(is_icon ? icondir->entries[c].res_info.icon.height : icondir->entries[c].res_info.cursor.height),
-         *			icondir->entries[c].plane_count,
-         *			icondir->entries[c].bit_count);*/
 
         /* find the corresponding icon resource */
         snprintf(name, sizeof(name)/sizeof(char), "%d", icondir->entries[c].res_id);
-        WinResource *fwr = this->findResource((is_icon ? std::string("3") : std::string("1")), std::string(name), res->language(),
-                                                     WinResource::Numeric);
-        if (fwr == nullptr) {
-            warn("%s: could not find `%s' in `%s' resource.",
-                 m_path, name, (is_icon ? "group_icon" : "group_cursor"));
+        WinResource *fwr = this->findResource((is_icon ? std::string("3") : std::string("1")), std::string(name), res->language(), WinResource::Numeric);
+        if (fwr == nullptr)
+        {
+            warn("[wres] %s: could not find `%s' in `%s' resource.", m_path, name, (is_icon ? "group_icon" : "group_cursor"));
             return nullptr;
         }
 
@@ -483,13 +480,13 @@ void* WinLibrary::extract_group_icon_cursor_resource(WinResource *res, size_t *r
         {
             if (fwr->size() == 0)
             {
-                warn("%s: icon resource `%s' is empty, skipping", m_path, name);
+                warn("[wres] %s: icon resource `%s' is empty, skipping", m_path, name);
                 skipped++;
                 continue;
             }
             if (fwr->size() != icondir->entries[c].bytes_in_res)
             {
-                warn("%s: mismatch of size in icon resource `%s' and group (%d vs %d)", m_path, name, fwr->size(), icondir->entries[c].bytes_in_res);
+                warn("[wres] %s: mismatch of size in icon resource `%s' and group (%d vs %d)", m_path, name, fwr->size(), icondir->entries[c].bytes_in_res);
             }
             size += fwr->size() < icondir->entries[c].bytes_in_res ? icondir->entries[c].bytes_in_res : fwr->size();
 
@@ -514,18 +511,17 @@ void* WinLibrary::extract_group_icon_cursor_resource(WinResource *res, size_t *r
 
     /* transfer each cursor/icon: Win32CursorIconDirEntry and data */
     skipped = 0;
-    for (int c = 0 ; c < icondir->count ; c++) {
+    for (int c = 0; c < icondir->count; c++)
+    {
         char name[14];
         char *data;
 
         /* find the corresponding icon resource */
         snprintf(name, sizeof(name)/sizeof(char), "%d", icondir->entries[c].res_id);
-        WinResource *fwr = this->findResource((is_icon ? std::string("3") : std::string("1")), std::string(name), res->language(),
-                                                     WinResource::Numeric);
+        WinResource *fwr = this->findResource((is_icon ? std::string("3") : std::string("1")), std::string(name), res->language(), WinResource::Numeric);
         if (fwr == nullptr)
         {
-            warn("%s: could not find `%s' in `%s' resource.",
-                 m_path, name, (is_icon ? "group_icon" : "group_cursor"));
+            warn("[warn] %s: could not find `%s' in `%s' resource.", m_path, name, (is_icon ? "group_icon" : "group_cursor"));
             return nullptr;
         }
 
@@ -547,7 +543,8 @@ void* WinLibrary::extract_group_icon_cursor_resource(WinResource *res, size_t *r
                sizeof(Win32CursorIconFileDirEntry)-sizeof(uint32_t));
 
         /* special treatment for cursors */
-        if (!is_icon) {
+        if (!is_icon)
+        {
             fileicondir->entries[c-skipped].width = icondir->entries[c].res_info.cursor.width;
             fileicondir->entries[c-skipped].height = icondir->entries[c].res_info.cursor.height / 2;
             fileicondir->entries[c-skipped].color_count = 0;
@@ -559,7 +556,10 @@ void* WinLibrary::extract_group_icon_cursor_resource(WinResource *res, size_t *r
 
         /* transfer resource into file memory */
         if (size > icondir->entries[c-skipped].bytes_in_res)
+        {
             size = icondir->entries[c-skipped].bytes_in_res;
+        }
+
         if (is_icon)
         {
             memcpy(&memory[offset], data, fwr->size());
@@ -568,8 +568,7 @@ void* WinLibrary::extract_group_icon_cursor_resource(WinResource *res, size_t *r
         {
             fileicondir->entries[c-skipped].hotspot_x = ((uint16_t *) data)[0];
             fileicondir->entries[c-skipped].hotspot_y = ((uint16_t *) data)[1];
-            memcpy(&memory[offset], data+sizeof(uint16_t)*2,
-                   fwr->size()-sizeof(uint16_t)*2);
+            memcpy(&memory[offset], data+sizeof(uint16_t)*2, fwr->size()-sizeof(uint16_t)*2);
             offset -= sizeof(uint16_t)*2;
         }
 
@@ -614,7 +613,8 @@ void* WinLibrary::extract_bitmap_resource(WinResource *res, size_t *ressize)
     /* In 24-bit bitmaps there's no colormap
      * The size of an entry in colormap is 4
      */
-    if (info.bit_count!=24) {
+    if (info.bit_count!=24)
+    {
 
         /* 0 value of clr_used means that all possible color
         * entries are used */
@@ -689,7 +689,8 @@ int WinLibrary::calc_vma_size()
     seg = PE_SECTIONS(m_data);
     CHECK_IF_BAD_POINTER(-1, *seg);
 
-    for (c = 0 ; c < segcount ; c++) {
+    for (c = 0; c < segcount; c++)
+    {
         CHECK_IF_BAD_POINTER(0, *seg);
 
         size = std::max(size, static_cast<size_t>(seg->virtual_address + seg->size_of_raw_data));
@@ -706,16 +707,21 @@ Win32ImageDataDirectory* WinLibrary::get_data_directory_entry(unsigned int entry
     pe_header = PE_HEADER(m_data);
     CHECK_IF_BAD_POINTER(NULL, pe_header->optional_header.magic);
 
-    if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32) {
+    if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32)
+    {
         Win32ImageOptionalHeader *optional_header = &(pe_header->optional_header);
         CHECK_IF_BAD_POINTER(NULL, optional_header->data_directory[entry]);
         return optional_header->data_directory + entry;
-    } else if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32_64) {
+    }
+    else if (pe_header->optional_header.magic == OPTIONAL_MAGIC_PE32_64)
+    {
         Win32ImageOptionalHeader64 *optional_header =
         (Win32ImageOptionalHeader64*)&(pe_header->optional_header);
         CHECK_IF_BAD_POINTER(NULL, optional_header->data_directory[entry]);
         return optional_header->data_directory + entry;
-    } else {
+    }
+    else
+    {
         return NULL;
     }
 }
@@ -729,12 +735,14 @@ bool WinLibrary::read_library()
 {
     /* check for DOS header signature `MZ' */
     CHECK_IF_BAD_POINTER(false, MZ_HEADER(m_data)->magic);
-    if (MZ_HEADER(m_data)->magic == IMAGE_DOS_SIGNATURE) {
+    if (MZ_HEADER(m_data)->magic == IMAGE_DOS_SIGNATURE)
+    {
         DOSImageHeader *mz_header = MZ_HEADER(m_data);
 
         CHECK_IF_BAD_POINTER(false, mz_header->lfanew);
-        if (mz_header->lfanew < sizeof (DOSImageHeader)) {
-            warn("%s: not a PE library", m_path.c_str());
+        if (mz_header->lfanew < sizeof (DOSImageHeader))
+        {
+            warn("[wres] %s: not a PE library", m_path.c_str());
             return false;
         }
 
@@ -744,14 +752,16 @@ bool WinLibrary::read_library()
     CHECK_IF_BAD_OFFSET(false, MZ_HEADER(m_data), sizeof(Win32ImageNTHeaders));
     /* check for OS2 (Win16) header signature `NE' */
     CHECK_IF_BAD_POINTER(false, NE_HEADER(m_data)->magic);
-    if (NE_HEADER(m_data)->magic == IMAGE_OS2_SIGNATURE) {
+    if (NE_HEADER(m_data)->magic == IMAGE_OS2_SIGNATURE)
+    {
         OS2ImageHeader *header = NE_HEADER(m_data);
         uint16_t *alignshift;
 
         CHECK_IF_BAD_POINTER(false, header->rsrctab);
         CHECK_IF_BAD_POINTER(false, header->restab);
-        if (header->rsrctab >= header->restab) {
-            warn("%s: no resource directory found", m_path.c_str());
+        if (header->rsrctab >= header->restab)
+        {
+            warn("[wres] %s: no resource directory found", m_path.c_str());
             return false;
         }
 
@@ -765,7 +775,8 @@ bool WinLibrary::read_library()
 
     /* check for NT header signature `PE' */
     CHECK_IF_BAD_POINTER(false, PE_HEADER(m_data)->signature);
-    if (PE_HEADER(m_data)->signature == IMAGE_NT_SIGNATURE) {
+    if (PE_HEADER(m_data)->signature == IMAGE_NT_SIGNATURE)
+    {
         Win32ImageSectionHeader *pe_sections;
         Win32ImageDataDirectory *dir;
         Win32ImageNTHeaders *pe_header;
@@ -773,7 +784,8 @@ bool WinLibrary::read_library()
 
         /* allocate new memory */
         m_length = this->calc_vma_size();
-        if (m_length <= 0) {
+        if (m_length <= 0)
+        {
             /* calc_vma_size has reported error */
             return false;
         }
@@ -799,7 +811,7 @@ bool WinLibrary::read_library()
             if ((uint8_t*)(m_data + pe_sec->virtual_address)
                 < (uint8_t*)(pe_sections + pe_header->file_header.number_of_sections))
             {
-                warn("%s: invalid sections layout", m_path.c_str());
+                warn("[wres] %s: invalid sections layout", m_path.c_str());
                 return false;
             }
 
@@ -816,8 +828,9 @@ bool WinLibrary::read_library()
         /* find resource directory */
         dir = this->get_data_directory_entry(IMAGE_DIRECTORY_ENTRY_RESOURCE);
         if (dir == NULL) return false;
-        if (dir->size == 0) {
-            warn("%s: file contains no resources", m_path.c_str());
+        if (dir->size == 0)
+        {
+            warn("[wres] %s: file contains no resources", m_path.c_str());
             return false;
         }
 
@@ -827,7 +840,7 @@ bool WinLibrary::read_library()
     }
 
     /* other (unknown) header signature was found */
-    warn("%s: not a PE or NE library", m_path.c_str());
+    warn("[wres] %s: not a PE or NE library", m_path.c_str());
     return false;
 }
 
@@ -837,7 +850,6 @@ WinLibrary::~WinLibrary()
     {
         delete m_data;
     }
-
 }
 bool WinLibrary::isLoaded() const
 {
@@ -848,7 +860,6 @@ bool WinLibrary::isValid() const
 {
     return m_isValid;
 }
-
 std::string WinLibrary::path() const
 {
     return m_path;

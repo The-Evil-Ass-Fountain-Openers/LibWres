@@ -22,7 +22,7 @@ public:
      * ID Type indicates how the ID should be treated.
      * A resource ID can be either numeric or a regular
      * string. The Any type is used when searching to
-     * indicate that the type doesn't matter.
+     * indicate that the ID type doesn't matter.
      */
     enum id_type { Numeric, String, Any=-1 };
     /*
@@ -51,11 +51,29 @@ public:
     std::string type() const;
     std::string name() const;
     std::string language() const;
+    /*
+     * Returns the resource type in its human readable
+     * string representation, if possible. Otherwise
+     * returns the same value as type().
+     */
     std::string typeAsString() const;
+    /*
+     * Returns the level of the resource. Valid level
+     * values according to the PE format are [0, 2].
+     *
+     * If the resource is a root resource that holds
+     * all other resources, this returns -1.
+     */
     int level() const;
+    /*
+     * Returns true if the resource is a directory.
+     * Directories do not contain any valid data with
+     * offset().
+     */
     bool isDirectory() const;
     /*
      * Returns the parent resource in the tree structure.
+     * If this is a root resource, this returns nullptr.
      */
     WinResource* parent() const;
     /*
@@ -66,12 +84,23 @@ public:
     std::vector<WinResource>& children();
     /*
      * Returns the location (first byte) of the resource
-     * in the PE file's memory representation.
+     * in the PE file's memory representation. Usually not
+     * used for actual data reading, which is done by
+     * using offset() instead.
      */
     uint8_t* location() const;
     /*
      * Returns the offset location and size of the actual
      * relevant data that belongs to the resource.
+     *
+     * The offset returns the first byte of what would be
+     * extracted by libwres (raw). The location this
+     * pointer points to is effectively:
+     *
+     * WinLibrary::m_data + first_byte_of_resource_data
+     *
+     * wres::check_offset can be used to check the validity
+     * of this location to prevent illegal memory access.
      */
     char* offset() const;
     size_t size() const;

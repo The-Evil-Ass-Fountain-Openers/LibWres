@@ -28,7 +28,6 @@ namespace wres
 /* check_offset:
  *   Check if a chunk of data (determined by offset and size)
  *   is within the bounds of the WinLibrary file.
- *   Usually not called directly.
  */
 bool check_offset(const char *memory, size_t total_size,
 				  const char *name, const void *offset, size_t size)
@@ -41,8 +40,9 @@ bool check_offset(const char *memory, size_t total_size,
 		need_size, total_size, (char *) offset - memory, size);*/
 
 	if (((memory > memory_end) || (block > block_end))
-		|| (block < memory) || (block >= memory_end) || (block_end > memory_end)) {
-		warn("%s: premature end", name);
+		|| (block < memory) || (block >= memory_end) || (block_end > memory_end))
+    {
+		warn("[wres] %s: premature end", name);
 		return false;
 	}
 

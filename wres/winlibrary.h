@@ -18,7 +18,7 @@ class WinLibrary
 {
 public:
     /*
-     * WinLibrary represents the file itself which can be a PE or NE executable.
+     * WinLibrary represents the file itself which can be a PE executable.
      * Upon loading the file, its memory contents can be viewed directly via
      * data(). The beginning contents of the file consists of the executable
      * header, so firstResource() can be used to skip the header.
@@ -44,8 +44,7 @@ public:
      */
     int length() const;
     /*
-     * Returns true if the file is a PE executable, false if the file is a NE
-     * executable.
+     * Returns true if the file is a PE executable, returns false otherwise.
      */
     bool isPEBinary() const;
     /*
@@ -54,11 +53,11 @@ public:
      *  - The file is 0 bytes long
      *  - Opening the file failed
      *  - Reading the file failed
-     *  - The file format is invalid and does not represent a PE/NE executable
+     *  - The file format is invalid and does not represent a PE executable
      */
     bool isValid() const;
     /*
-     * Returns true if the file has been loaded into memory.
+     * Returns true if the file has been successfully read and loaded into memory.
      */
     bool isLoaded() const;
     /*
@@ -71,9 +70,14 @@ public:
      */
     WinResource& root();
     /*
-     * Extracts the contents of the resource onto the filesystem. The raw
-     * parameter can be used to tell the procedure to simply dump the raw
-     * contents of the resource instead of trying to parse it first.
+     * Extracts the contents of the resource onto the filesystem. Outpath
+     * is defined as the output directory. The raw parameter can be used
+     * to tell the procedure to simply dump the raw contents of the resource
+     * instead of trying to parse it first.
+     *
+     * If the provided resource is a directory, this method will recursively
+     * extract everything from that directory. Passing the root resource thus
+     * extracts all the resources.
      */
     bool extractResource(WinResource* res, std::string outpath, bool raw);
 
@@ -83,16 +87,21 @@ public:
      * can be searched for by using the find_resource method. This method is
      * called by the constructor.
      */
-
     bool buildResourceTree(WinResource *res);
 
     static bool compareResourceId(const WinResource& res, std::string id, WinResource::id_type idType);
 
+    /*
+     * Searches the tree structure and returns a pointer to the resource if found.
+     * This returns a pointer to a single resource, which can be a directory.
+     * Returns nullptr if the resource couldn't be found.
+     */
     WinResource *findResource(std::string type, std::string name, std::string language,
                                      WinResource::id_type tType = WinResource::Any,
                                      WinResource::id_type nType = WinResource::Any,
                                      WinResource::id_type lType = WinResource::Any);
 
+    void printResourceTree();
 
 private:
     std::string m_path;

@@ -7,10 +7,7 @@
 namespace wres
 {
 
-WinResource::WinResource()
-{
-
-}
+WinResource::WinResource() {}
 
 bool WinResource::setId(std::string i, id_type t)
 {
@@ -111,7 +108,7 @@ std::string WinResource::typeAsString() const
     }
 }
 /*
- * get_extract_extension:
+ * getExtractExtension:
  * Return extension for files of a certain resource type
  */
 std::string WinResource::getExtractExtension() const
@@ -129,7 +126,7 @@ std::string WinResource::getExtractExtension() const
             return ".cur";
     }
 
-    // Try recognizing PNG
+    // Try recognizing if the resource is a PNG image
     if(m_size > 8 && m_offset != nullptr)
     {
         if(memcmp((uint8_t*)m_offset, png_signature, 8) == 0)
@@ -137,6 +134,7 @@ std::string WinResource::getExtractExtension() const
             return ".png";
         }
     }
+    // Try recognizing if the resource is a JPG image
     if(m_size > 3 && m_offset != nullptr)
     {
         if(memcmp((uint8_t*)m_offset, jpg_signature, 3) == 0)
@@ -145,6 +143,7 @@ std::string WinResource::getExtractExtension() const
         }
     }
 
+    // Otherwise, return no extension
     return "";
 }
 
