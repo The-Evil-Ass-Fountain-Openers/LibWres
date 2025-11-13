@@ -79,7 +79,7 @@ public:
      * extract everything from that directory. Passing the root resource thus
      * extracts all the resources.
      */
-    bool extractResource(WinResource* res, std::string outpath, bool raw);
+    bool extractResource(WinResource* res, std::string outpath, bool raw = false);
 
     /*
      * Builds the resource tree structure which can be traversed by accessing
