@@ -8,6 +8,16 @@ LibWres is a C++ library for reading and parsing Windows Portable Executable (PE
 
 This library is primarily written for [libqmsstyles](https://github.com/The-Evil-Ass-Fountain-Openers/libqmsstyles), but it can be used as a generic library for parsing and extracing resources from files that follow the PE format (`.exe`, `.dll`, `.mui`, `.msstyles`, etc. files).
 
-## TODO:
+## Testing 
 
-- Write test examples
+After building the library, do the following:
+
+```bash
+$ cd /path/to/libwres/build/test 
+$ ./libwrestest > log.txt
+```
+
+## Credits
+
+- [Wine](https://www.winehq.org/) for winemine.exe and shell32.dll used for testing
+- [SandTechStuff's](https://github.com/SandTechStuff) [Aero11](https://github.com/SandTechStuff/Aero11) msstyles theme used for testing
