@@ -23,7 +23,7 @@
 #include <stdio.h>	/* Gnulib/C89 */
 #include "error.h"
 
-const char* program_name = "wrestool";
+const char* program_name = "libwres";
 
 struct MessageHeader {
 	struct MessageHeader *old;
