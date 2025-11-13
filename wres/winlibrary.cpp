@@ -110,7 +110,7 @@ void WinLibrary::printResourceTree()
     for(int i = 0; i < m_root.children().size(); i++)
     {
         auto c = m_root.children()[i];
-        printf("Type: %s\n", c.typeAsString().c_str());
+        printf("Type: %s (%s)\n", c.typeAsString().c_str(), c.type().c_str());
 
         for(int j = 0; j < c.children().size(); j++)
         {
